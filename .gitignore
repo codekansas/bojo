@@ -1,0 +1,8 @@
+# .gitignore
+
+.vscode/
+
+*.pyc
+*.pyo
+*.egg-info/
+
