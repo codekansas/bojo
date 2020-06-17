@@ -114,7 +114,7 @@ def _parse_state(state: str) -> ItemState:
 def _parse_signifier(signifier: str) -> Optional[ItemSignifier]:
     signifier = signifier.strip().lower().replace('\n', ' ')
     if signifier != NONE_STR:
-        if signifier not in ItemSignifierDict:
+        if signifier in ItemSignifierDict:
             return ItemSignifierDict[signifier]
         elif signifier in {v.value for v in ItemSignifierDict.values()}:
             return ItemSignifier(signifier)
