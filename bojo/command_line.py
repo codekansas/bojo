@@ -22,7 +22,8 @@ from bojo.db import (
 NONE_STR = 'none'
 
 if should_use_verbose():
-    STATE_OPTS = ', '.join([f'[{k}] {v.value}' for k, v in ItemStateDict.items()])
+    STATE_OPTS = ', '.join(
+        [f'[{k}] {v.value}' for k, v in ItemStateDict.items()])
     SIGNIFIER_OPTS = ', '.join(
         [f'[{k}] {v.value}' for k, v in ItemSignifierDict.items()])
 
@@ -98,14 +99,40 @@ def delete(id: int) -> None:
         click.echo('Deleted item')
 
 
-@cli.group()
-def mark():
-    """Update item states."""
+def _parse_state(state: str) -> ItemState:
+    state = state.strip().lower().replace('\n', ' ')
+    if state in ItemStateDict:
+        return ItemStateDict[state]
+    elif state in {v.value for v in ItemStateDict.values()}:
+        return ItemState(state)
+    else:
+        opts = ''.join([f'\n  {k}: {v.value}' for k,
+                        v in ItemStateDict.items()])
+        raise RuntimeError(f'Invalid state {state}. Options are:{opts}')
 
-    pass
+
+def _parse_signifier(signifier: str) -> Optional[ItemSignifier]:
+    signifier = signifier.strip().lower().replace('\n', ' ')
+    if signifier != NONE_STR:
+        if signifier not in ItemSignifierDict:
+            return ItemSignifierDict[signifier]
+        elif signifier in {v.value for v in ItemSignifierDict.values()}:
+            return ItemSignifier(signifier)
+        else:
+            opts = ''.join(
+                [f'\n  {k}: {v.value}' for k, v in ItemSignifierDict.items()])
+            raise RuntimeError(
+                f'Invalid signifier {signifier}. Options are:{opts}')
+    else:
+        return None
 
 
-def _mark(id: int, state: ItemState) -> None:
+@cli.command(help='Update item state')
+@click.argument('state')
+@click.argument('id', type=int)
+def mark(state: str, id: int) -> None:
+    state = _parse_state(state)
+
     session = get_session()
     item = session.query(Item).get(id)
     if item is None:
@@ -117,83 +144,21 @@ def _mark(id: int, state: ItemState) -> None:
     click.echo(f'Marked item {id} as {state.value}')
 
 
-@mark.command(help='Mark an item as complete')
+@cli.command(help='Update item signifier')
+@click.argument('signifier', default=NONE_STR)
 @click.argument('id', type=int)
-def complete(id: int) -> None:
-    _mark(id, ItemState.COMPLETE)
+def sig(signifier: str, id: int) -> None:
+    signifier = _parse_signifier(signifier)
 
-
-@mark.command(help='Mark an item as incomplete')
-@click.argument('id', type=int)
-def incomplete(id: int) -> None:
-    _mark(id, ItemState.INCOMPLETE)
-
-
-@mark.command(help='Mark an item as migrated')
-@click.argument('id', type=int)
-def migrate(id: int) -> None:
-    _mark(id, ItemState.MIGRATED)
-
-
-@mark.command(help='Mark an item as scheduled')
-@click.argument('id', type=int)
-def schedule(id: int) -> None:
-    _mark(id, ItemState.SCHEDULED)
-
-
-@mark.command(help='Mark an item as irrelevant')
-@click.argument('id', type=int)
-def irrelevant(id: int) -> None:
-    _mark(id, ItemState.IRRELEVANT)
-
-
-@mark.command(help='Mark an item as a note')
-@click.argument('id', type=int)
-def note(id: int) -> None:
-    _mark(id, ItemState.NOTE)
-
-
-@mark.command(help='Mark an item as an event')
-@click.argument('id', type=int)
-def event(id: int) -> None:
-    _mark(id, ItemState.EVENT)
-
-
-@cli.group()
-def sig():
-    """Changes the significance of items."""
-
-    pass
-
-
-def _sig(id: int, sig: Optional[ItemSignifier]) -> None:
     session = get_session()
     item = session.query(Item).get(id)
     if item is None:
         raise RuntimeError(f'Item {id} not found')
 
-    item.signifier = sig
+    item.signifier = signifier
     session.commit()
     click.echo(item)
     click.echo(f'Marked item {id} as {sig.value}')
-
-
-@sig.command(help='Signify an item as priority')
-@click.argument('id', type=int)
-def pri(id: int) -> None:
-    _sig(id, ItemSignifier.PRIORITY)
-
-
-@sig.command(help='Signify an item as inspirational')
-@click.argument('id', type=int)
-def insp(id: int) -> None:
-    _sig(id, ItemSignifier.INSPIRATION)
-
-
-@sig.command(help='Remove signifier from an item')
-@click.argument('id', type=int)
-def off(id: int) -> None:
-    _sig(id, None)
 
 
 @cli.command(help='Adds a new item')
@@ -212,26 +177,8 @@ def add(description: str, state: str, signifier: str, parent: str, time: str) ->
     if parent != NONE_STR:
         parent = int(parent)
 
-    # Parses the state.
-    state = state.strip().replace('\n', ' ')
-    if state not in ItemStateDict:
-        opts = ''.join([f'\n  {k}: {v}' for k, v in ItemStateDict.items()])
-        raise RuntimeError(f'Invalid state {state}. Options are:{opts}')
-    else:
-        state = ItemStateDict[state]
-
-    # Parses the signifier.
-    signifier = signifier.strip().replace('\n', ' ')
-    if signifier != NONE_STR:
-        if signifier not in ItemSignifierDict:
-            opts = ''.join(
-                [f'\n  {k}: {v}' for k, v in ItemSignifierDict.items()])
-            raise RuntimeError(
-                f'Invalid signifier {signifier}. Options are:{opts}')
-        else:
-            signifier = ItemSignifierDict[signifier]
-    else:
-        signifier = None
+    state = _parse_state(state)
+    signifier = _parse_signifier(signifier)
 
     # Parses the time.
     if time != NONE_STR:
