@@ -1,4 +1,9 @@
 #!/usr/bin/env python
+"""Instructions for uploading to pypi:
+
+1) python setup.py sdist bdist_wheel
+2) python -m twine upload dist/*
+"""
 
 from setuptools import find_packages, setup
 

@@ -2,6 +2,8 @@
 
 `bojo` is a command-line bullet journal. If you're new to bullet journals, check out [/r/bulletjournal](https://www.reddit.com/r/bulletjournal/) or the bullet journal [website](https://bulletjournal.com/).
 
+![demo](demo.gif)
+
 ## Getting Started
 
 Install the tool using
