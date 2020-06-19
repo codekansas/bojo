@@ -59,6 +59,19 @@ Upcoming 1 item(s):
 1 ! x Make a cool bullet journal command line tool Thursday, June 18, 2020 at 6:00 PM
 ```
 
+Once we've completed an entry, do:
+
+```
+> bojo mark complete 1
+
+OR
+
+> bojo mark x 1
+
+1 ! x Make a cool bullet journal command line tool Thursday, June 18, 2020 at 6:00 PM
+Marked item 1 as complete
+```
+
 ## Notes
 
 **Shouldn't "bullet journal" be abbreviated "bujo", not "bojo"?**
@@ -69,3 +82,4 @@ I mean, yeah, technically. It's faster to type "bojo" into the command line, tho
 
 - `BOJO_ROOT` points to the root path for storing data. By default, this is `~/.bojo`
 - `BOJO_VERBOSE` is an option which, when set, toggles verbose mode (not just symbols). This is good for when you're getting started.
+- `BOJO_NUM_ITEMS` sets the number of items to list by default

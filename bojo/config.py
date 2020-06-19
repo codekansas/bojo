@@ -11,7 +11,7 @@ def get_bojo_root() -> Path:
 
     # Can set this environment variable to override.
     if 'BOJO_ROOT' in os.environ:
-        root_dir = Path(os.environ)
+        root_dir = Path(os.environ['BOJO_ROOT'])
     
     # Makes environment if it doesn't exist yet.
     if not os.path.exists(root_dir):

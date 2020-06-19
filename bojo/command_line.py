@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import json
 import sys
 from datetime import datetime
 from typing import List, Optional
@@ -7,7 +8,6 @@ from typing import List, Optional
 import click
 import dateparser
 import sqlalchemy as sql
-from termcolor import colored
 
 from bojo.config import should_use_verbose
 from bojo.db import (
@@ -18,8 +18,15 @@ from bojo.db import (
     ItemSignifier,
     ItemSignifierDict,
 )
-
-NONE_STR = 'none'
+from bojo.render_utils import (
+    parse_choice,
+    parse_state,
+    parse_signifier,
+    render_items,
+    render_title,
+    NONE_STR,
+)
+from bojo.subcommands.list import list_command
 
 if should_use_verbose():
     STATE_OPTS = ', '.join(
@@ -34,49 +41,6 @@ else:
     SIGNIFIER_PROMPT = 'Signifier'
 
 
-def _title(s: str) -> None:
-    click.echo(colored(s, attrs=['underline']) + ':')
-
-
-def _render_items(items: List[Item], title: str, empty_str: Optional[str]) -> None:
-    num_items = items.count()
-    if num_items:
-        _title(title)
-        for item in items:
-            click.echo(item)
-    else:
-        if empty_str is not None:
-            click.echo(empty_str)
-
-
-def _parse_state(state: str) -> ItemState:
-    state = state.strip().lower().replace('\n', ' ')
-    if state in ItemStateDict:
-        return ItemStateDict[state]
-    elif state in {v.value for v in ItemStateDict.values()}:
-        return ItemState(state)
-    else:
-        opts = ''.join([f'\n  {k}: {v.value}' for k,
-                        v in ItemStateDict.items()])
-        raise RuntimeError(f'Invalid state {state}. Options are:{opts}')
-
-
-def _parse_signifier(signifier: str) -> Optional[ItemSignifier]:
-    signifier = signifier.strip().lower().replace('\n', ' ')
-    if signifier != NONE_STR:
-        if signifier in ItemSignifierDict:
-            return ItemSignifierDict[signifier]
-        elif signifier in {v.value for v in ItemSignifierDict.values()}:
-            return ItemSignifier(signifier)
-        else:
-            opts = ''.join(
-                [f'\n  {k}: {v.value}' for k, v in ItemSignifierDict.items()])
-            raise RuntimeError(
-                f'Invalid signifier {signifier}. Options are:{opts}')
-    else:
-        return None
-
-
 @click.group()
 def cli():
     """A command-line bullet journal."""
@@ -84,62 +48,12 @@ def cli():
     pass
 
 
+cli.add_command(list_command)
+
+
 @cli.command(help='Provides information about annotation')
 def info() -> None:
     click.echo(Item.info())
-
-
-@cli.command(help='Lists relevant items')
-@click.option('-n', '--num-items', type=int, default=5)
-@click.option('-s', '--state', multiple=True)
-@click.option('-g', '--signifier', multiple=True)
-def list(num_items: int, state: List[str], signifier: List[str]) -> None:
-    session = get_session()
-
-    # Parses state and signifier queries.
-    if state:
-        state = [_parse_state(s) for s in state]
-    else:
-        state = [s for s in ItemState]
-    filt = Item.state.in_(state)
-
-    if signifier:
-        signifier = [_parse_signifier(s) for s in signifier]
-        signifier_query = Item.signifier.in_(
-            [s for s in signifier if s is not None])
-        if any(s is None for s in signifier):
-            signifier_query = sql.or_(
-                Item.signifier.is_(None), signifier_query)
-        filt = sql.or_(filt, signifier_query)
-
-    # Shows the last N items.
-    items = session.query(Item) \
-        .order_by(Item.id.desc()) \
-        .filter(filt) \
-        .limit(num_items)
-    if items.count():
-        _title(f'Last {items.count()} updated item(s)')
-        for item in items:
-            click.echo(item.render(show_children=False))
-
-    # Lists upcoming items.
-    items = session.query(Item) \
-        .filter(sql.and_(filt, Item.time > datetime.now())) \
-        .order_by(Item.time) \
-        .limit(num_items)
-    if items.count():
-        _title(f'\nUpcoming {items.count()} event(s)')
-        for item in items:
-            click.echo(item.render())
-
-    # Lists priority items.
-    items = session.query(Item) \
-        .filter(sql.and_(filt, Item.signifier == ItemSignifier.PRIORITY)) \
-        .order_by(Item.time)
-    if items.count():
-        _title(f'\nPriority item(s)')
-        for item in items:
-            click.echo(item.render(show_complete_children=False))
 
 
 @cli.command(help='Delete an item forever')
@@ -158,61 +72,44 @@ def delete(id: int) -> None:
 
 
 @cli.command(help='Update item state')
-@click.argument('state')
+@click.argument('state', type=str)
 @click.argument('id', type=int)
 def mark(state: str, id: int) -> None:
-    state = _parse_state(state)
-
     session = get_session()
     item = session.query(Item).get(id)
     if item is None:
         raise RuntimeError(f'Item {id} not found')
 
-    item.state = state
+    state = parse_choice(state)
+    if isinstance(state, ItemState):
+        item.state = state
+        ostr = f'Marked item {id} as {state.value}'
+    elif isinstance(state, ItemSignifier):
+        item.signifier = state
+        ostr = f'Marked item {id} as {state.value}'
+    else:
+        item.signifier = None
+        ostr = f'Cleared signifier for item {id}'
     session.commit()
     click.echo(item)
-    click.echo(f'Marked item {id} as {state.value}')
-
-
-@cli.command(help='Update item signifier')
-@click.argument('signifier', default=NONE_STR)
-@click.argument('id', type=int)
-def sig(signifier: str, id: int) -> None:
-    signifier = _parse_signifier(signifier)
-
-    session = get_session()
-    item = session.query(Item).get(id)
-    if item is None:
-        raise RuntimeError(f'Item {id} not found')
-
-    item.signifier = signifier
-    session.commit()
-    click.echo(item)
-    click.echo(f'Marked item {id} as {sig.value}')
+    click.echo(ostr)
 
 
 @cli.command(help='Mark past items as complete')
-@click.option('-l', '--list', is_flag=True, help='If set, list completed items instead')
-def complete(list: bool) -> None:
+def complete() -> None:
     session = get_session()
 
-    if list:
-        items = session.query(Item) \
-            .filter(Item.state == ItemState.COMPLETE) \
-            .order_by(Item.time_updated.desc())
-        _render_items(items, 'Completed Items', 'All past items are completed')
+    items = session.query(Item) \
+        .filter(Item.time < datetime.now()) \
+        .filter(Item.state != ItemState.COMPLETE)
+    num_items = items.count()
+    if num_items:
+        if click.confirm(f'Mark {num_items} items as complete?', abort=True):
+            items.update({'state': ItemState.COMPLETE})
+            session.commit()
+            click.echo(f'Completed {num_items} items')
     else:
-        items = session.query(Item) \
-            .filter(Item.time < datetime.now()) \
-            .filter(Item.state != ItemState.COMPLETE)
-        num_items = items.count()
-        if num_items:
-            if click.confirm(f'Mark {num_items} items as complete?', abort=True):
-                items.update({'state': ItemState.COMPLETE})
-                session.commit()
-                click.echo(f'Completed {num_items} items')
-        else:
-            click.echo('All past items are complete')
+        click.echo('All past items are complete')
 
 
 @cli.command(help='Run a text query on all items')
@@ -224,7 +121,31 @@ def query(substring: str, show_complete: bool) -> None:
     if not show_complete:
         query = query.filter(Item.state != ItemState.COMPLETE)
     items = query.order_by(Item.time_updated.desc())
-    _render_items(items, 'Matching Items', 'No matching items found')
+    render_items(items, 'Matching Items', 'No matching items found')
+
+
+@cli.command('export', help='Exports events to JSON')
+@click.argument('file', default='-')
+def export_func(file: str) -> None:
+    session = get_session()
+    all_items = [item.as_dict() for item in session.query(Item)]
+    with click.open_file(file, 'w') as f:
+        json.dump(all_items, f, indent=2)
+
+
+@cli.command('import', help='Imports events from JSON')
+@click.argument('file', default='-')
+def import_func(file: str) -> None:
+    session = get_session()
+    click.get_text_stream('stdin')
+    all_items = []
+    with click.open_file(file, 'r') as f:
+        for item_str in json.load(f):
+            all_items.append(Item.from_dict(item_str))
+    session = get_session()
+    session.add_all(all_items)
+    session.commit()
+    click.echo(f'Added {len(all_items)} items')
 
 
 @cli.command(help='Adds a new item')
@@ -243,8 +164,8 @@ def add(description: str, state: str, signifier: str, parent: str, time: str) ->
     if parent != NONE_STR:
         parent = int(parent)
 
-    state = _parse_state(state)
-    signifier = _parse_signifier(signifier)
+    state = parse_state(state)
+    signifier = parse_signifier(signifier)
 
     # Parses the time.
     if time != NONE_STR:

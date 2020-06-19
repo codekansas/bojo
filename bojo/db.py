@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 
 import enum
+import json
 from datetime import datetime
-from typing import NamedTuple
+from typing import Any, Dict, NamedTuple, Optional
 
 import sqlalchemy as sql
 from sqlalchemy.ext.declarative import declarative_base
@@ -112,8 +113,19 @@ class Item(Base):
 
         return '\n'.join(strs)
 
-    def __format_time(self, t: datetime) -> str:
-        return t.strftime('%A, %B %-d, %Y at %-I:%M %p')
+    TIME_FORMAT = '%A, %B %d, %Y at %I:%M %p'
+
+    @classmethod
+    def __format_time(cls, t: Optional[datetime]) -> Optional[str]:
+        if t is None:
+            return None
+        return t.strftime(cls.TIME_FORMAT)
+
+    @classmethod
+    def __from_time(cls, s: Optional[str]) -> Optional[datetime]:
+        if s:
+            return datetime.strptime(s, cls.TIME_FORMAT)
+        return None
 
     class RenderOpts(NamedTuple):
         show_children: bool = True
@@ -165,6 +177,30 @@ class Item(Base):
 
     def __repr__(self) -> str:
         return self.render()
+
+    def as_dict(self) -> Dict[str, Any]:
+        item_dict = {
+            'description': self.description,
+            'state': self.state.value,
+            'signifier': None if self.signifier is None else self.signifier.value,
+            'time': self.__format_time(self.time),
+            'time_created': self.__format_time(self.time_created),
+            'time_updated': self.__format_time(self.time_updated),
+            'parent_id': self.parent_id,
+        }
+        return {k: v for k, v in item_dict.items() if v is not None}
+
+    @classmethod
+    def from_dict(cls, item_dict: Dict[str, Any]) -> 'Item':
+        return cls(
+            description=item_dict['description'],
+            state=ItemState(item_dict['state']),
+            signifier=ItemSignifier(item_dict.get('signifier', None)),
+            time=cls.__from_time(item_dict['time']),
+            time_created=cls.__from_time(item_dict['time_created']),
+            time_updated=cls.__from_time(item_dict.get('time_updated', None)),
+            parent_id=item_dict.get('parent_id', None),
+        )
 
 
 # Creates the SQLite database.
