@@ -180,22 +180,25 @@ class Item(Base):
 
     def as_dict(self) -> Dict[str, Any]:
         item_dict = {
+            'id': self.id,
             'description': self.description,
             'state': self.state.value,
             'signifier': None if self.signifier is None else self.signifier.value,
             'time': self.__format_time(self.time),
             'time_created': self.__format_time(self.time_created),
             'time_updated': self.__format_time(self.time_updated),
-            'parent_id': self.parent_id,
+            'parent_id': self.parent_id if isinstance(self.parent_id, int) else None,
         }
         return {k: v for k, v in item_dict.items() if v is not None}
 
     @classmethod
     def from_dict(cls, item_dict: Dict[str, Any]) -> 'Item':
         return cls(
+            id=item_dict['id'],
             description=item_dict['description'],
             state=ItemState(item_dict['state']),
-            signifier=ItemSignifier(item_dict.get('signifier', None)),
+            signifier=ItemSignifier(
+                item_dict['signifier']) if 'signifier' in item_dict else None,
             time=cls.__from_time(item_dict.get('time', None)),
             time_created=cls.__from_time(item_dict.get('time_created', None)),
             time_updated=cls.__from_time(item_dict.get('time_updated', None)),
