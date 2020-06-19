@@ -2,7 +2,7 @@
 
 import sys
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 import click
 import dateparser
@@ -34,69 +34,19 @@ else:
     SIGNIFIER_PROMPT = 'Signifier'
 
 
-@click.group()
-def cli():
-    """A command-line bullet journal."""
-
-    pass
+def _title(s: str) -> None:
+    click.echo(colored(s, attrs=['underline']) + ':')
 
 
-@cli.command(help='Provides information about annotation')
-def info() -> None:
-    click.echo(Item.info())
-
-
-@cli.command(help='Lists relevant items')
-@click.argument('num-items', type=int, default=5)
-def list(num_items: int) -> None:
-    session = get_session()
-
-    def _title(s: str) -> None:
-        click.echo(colored(s, attrs=['underline']) + ':')
-
-    # Shows the last N items.
-    items = session.query(Item) \
-        .order_by(Item.time_updated.desc()) \
-        .limit(num_items)
-    if items.count():
-        _title(f'Last {items.count()} updated item(s)')
+def _render_items(items: List[Item], title: str, empty_str: Optional[str]) -> None:
+    num_items = items.count()
+    if num_items:
+        _title(title)
         for item in items:
             click.echo(item)
-
-    # Lists upcoming items.
-    items = session.query(Item) \
-        .filter(Item.time > datetime.now()) \
-        .filter(Item.state == ItemState.EVENT) \
-        .order_by(Item.time) \
-        .limit(num_items)
-    if items.count():
-        _title(f'\nUpcoming {items.count()} event(s)')
-        for item in items:
-            click.echo(item)
-
-    # Lists priority items.
-    items = session.query(Item) \
-        .filter(Item.signifier == ItemSignifier.PRIORITY) \
-        .order_by(Item.time)
-    if items.count():
-        _title(f'\nPriority item(s)')
-        for item in items:
-            click.echo(item)
-
-
-@cli.command(help='Delete an item forever')
-@click.argument('id', type=int)
-def delete(id: int) -> None:
-    session = get_session()
-    item = session.query(Item).get(id)
-    if item is None:
-        raise RuntimeError(f'Item {id} not found')
-    click.echo(item)
-
-    if click.confirm('Do you want to delete this item?', abort=True):
-        session.delete(item)
-        session.commit()
-        click.echo('Deleted item')
+    else:
+        if empty_str is not None:
+            click.echo(empty_str)
 
 
 def _parse_state(state: str) -> ItemState:
@@ -125,6 +75,86 @@ def _parse_signifier(signifier: str) -> Optional[ItemSignifier]:
                 f'Invalid signifier {signifier}. Options are:{opts}')
     else:
         return None
+
+
+@click.group()
+def cli():
+    """A command-line bullet journal."""
+
+    pass
+
+
+@cli.command(help='Provides information about annotation')
+def info() -> None:
+    click.echo(Item.info())
+
+
+@cli.command(help='Lists relevant items')
+@click.option('-n', '--num-items', type=int, default=5)
+@click.option('-s', '--state', multiple=True)
+@click.option('-g', '--signifier', multiple=True)
+def list(num_items: int, state: List[str], signifier: List[str]) -> None:
+    session = get_session()
+
+    # Parses state and signifier queries.
+    if state:
+        state = [_parse_state(s) for s in state]
+    else:
+        state = [s for s in ItemState]
+    filt = Item.state.in_(state)
+
+    if signifier:
+        signifier = [_parse_signifier(s) for s in signifier]
+        signifier_query = Item.signifier.in_(
+            [s for s in signifier if s is not None])
+        if any(s is None for s in signifier):
+            signifier_query = sql.or_(
+                Item.signifier.is_(None), signifier_query)
+        filt = sql.or_(filt, signifier_query)
+
+    # Shows the last N items.
+    items = session.query(Item) \
+        .order_by(Item.id.desc()) \
+        .filter(filt) \
+        .limit(num_items)
+    if items.count():
+        _title(f'Last {items.count()} updated item(s)')
+        for item in items:
+            click.echo(item.render(show_children=False))
+
+    # Lists upcoming items.
+    items = session.query(Item) \
+        .filter(sql.and_(filt, Item.time > datetime.now())) \
+        .order_by(Item.time) \
+        .limit(num_items)
+    if items.count():
+        _title(f'\nUpcoming {items.count()} event(s)')
+        for item in items:
+            click.echo(item.render())
+
+    # Lists priority items.
+    items = session.query(Item) \
+        .filter(sql.and_(filt, Item.signifier == ItemSignifier.PRIORITY)) \
+        .order_by(Item.time)
+    if items.count():
+        _title(f'\nPriority item(s)')
+        for item in items:
+            click.echo(item.render(show_complete_children=False))
+
+
+@cli.command(help='Delete an item forever')
+@click.argument('id', type=int)
+def delete(id: int) -> None:
+    session = get_session()
+    item = session.query(Item).get(id)
+    if item is None:
+        raise RuntimeError(f'Item {id} not found')
+    click.echo(item)
+
+    if click.confirm('Do you want to delete this item?', abort=True):
+        session.delete(item)
+        session.commit()
+        click.echo('Deleted item')
 
 
 @cli.command(help='Update item state')
@@ -159,6 +189,42 @@ def sig(signifier: str, id: int) -> None:
     session.commit()
     click.echo(item)
     click.echo(f'Marked item {id} as {sig.value}')
+
+
+@cli.command(help='Mark past items as complete')
+@click.option('-l', '--list', is_flag=True, help='If set, list completed items instead')
+def complete(list: bool) -> None:
+    session = get_session()
+
+    if list:
+        items = session.query(Item) \
+            .filter(Item.state == ItemState.COMPLETE) \
+            .order_by(Item.time_updated.desc())
+        _render_items(items, 'Completed Items', 'All past items are completed')
+    else:
+        items = session.query(Item) \
+            .filter(Item.time < datetime.now()) \
+            .filter(Item.state != ItemState.COMPLETE)
+        num_items = items.count()
+        if num_items:
+            if click.confirm(f'Mark {num_items} items as complete?', abort=True):
+                items.update({'state': ItemState.COMPLETE})
+                session.commit()
+                click.echo(f'Completed {num_items} items')
+        else:
+            click.echo('All past items are complete')
+
+
+@cli.command(help='Run a text query on all items')
+@click.argument('substring')
+@click.option('-s', '--show-complete', is_flag=True, help='If set, show completed items')
+def query(substring: str, show_complete: bool) -> None:
+    session = get_session()
+    query = session.query(Item).filter(Item.description.contains(substring))
+    if not show_complete:
+        query = query.filter(Item.state != ItemState.COMPLETE)
+    items = query.order_by(Item.time_updated.desc())
+    _render_items(items, 'Matching Items', 'No matching items found')
 
 
 @cli.command(help='Adds a new item')

@@ -2,6 +2,7 @@
 
 import enum
 from datetime import datetime
+from typing import NamedTuple
 
 import sqlalchemy as sql
 from sqlalchemy.ext.declarative import declarative_base
@@ -99,11 +100,12 @@ class Item(Base):
             strs.append(
                 f'Enable it by setting the {env_var} environment variable')
             strs.append('  export BOJO_VERBOSE=1')
-        
+
         # Adds snippit about autocomplete.
         strs.append('')
         strs.append(colored('Autocomplete', attrs=['underline']))
-        strs.append('To enable autocomplete, add the right setting to your shell:')
+        strs.append(
+            'To enable autocomplete, add the right setting to your shell:')
         strs.append('  eval "$(_BOJO_COMPLETE=source_bash bojo)"')
         strs.append('  eval "$(_BOJO_COMPLETE=source_zsh bojo)"')
         strs.append('  eval "$(_BOJO_COMPLETE=source_fish bojo)"')
@@ -113,20 +115,27 @@ class Item(Base):
     def __format_time(self, t: datetime) -> str:
         return t.strftime('%A, %B %-d, %Y at %-I:%M %p')
 
-    def __repr__(self) -> str:
-        verbose_mode = should_use_verbose()
+    class RenderOpts(NamedTuple):
+        show_children: bool = True
+        show_complete_children: bool = True
+        verbose_mode: bool = False
 
+    def render(self, **kwargs) -> str:
+        if 'verbose_mode' not in kwargs:
+            kwargs['verbose_mode'] = should_use_verbose()
+
+        render_opts = self.RenderOpts(**kwargs)
         color = ItemStateColor[self.state]
         rep = colored(self.description, color)
 
         state_symbol = ItemStateDictInv[self.state]
-        if verbose_mode:
+        if render_opts.verbose_mode:
             state_symbol = f'{state_symbol} ({self.state.value})'
         rep = f'{state_symbol} {rep}'
 
         signifier_symbol = ItemSignifierDictInv.get(self.signifier, None)
         if signifier_symbol is not None:
-            if verbose_mode:
+            if render_opts.verbose_mode:
                 signifier_symbol = f'{signifier_symbol} ({self.signifier.value})'
 
             rep = f'{signifier_symbol} {rep}'
@@ -145,11 +154,17 @@ class Item(Base):
 
         # Adds sub-representations.
         reps = [rep]
-        for child in self.children:
-            sub_rep = repr(child)
-            reps.append('\n'.join(['  ' + c for c in sub_rep.split('\n')]))
+        if render_opts.show_children:
+            for child in self.children:
+                if child.state == ItemState.COMPLETE and not render_opts.show_complete_children:
+                    continue
+                sub_rep = child.render(**render_opts._asdict())
+                reps.append('\n'.join(['  ' + c for c in sub_rep.split('\n')]))
 
         return '\n'.join(reps)
+
+    def __repr__(self) -> str:
+        return self.render()
 
 
 # Creates the SQLite database.
