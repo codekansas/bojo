@@ -38,7 +38,7 @@ def list_command(ctx, num_items: int) -> None:
 @list_command.command(help='Show all items, orderd by ID')
 @click.argument('state', type=str, default=NONE_STR)
 @click.pass_context
-def all(ctx, state: Optional[str]) -> None:
+def all(ctx, state: str) -> None:
     session = get_session()
     num_items = ctx.obj['NUM_ITEMS']
 
@@ -58,19 +58,25 @@ def all(ctx, state: Optional[str]) -> None:
 
 
 @list_command.command(help='Show upcoming items')
-@click.argument('state', type=str, default='event')
+@click.argument('state', type=str, default=ItemState.EVENT.value)
 @click.pass_context
 def upcoming(ctx, state: str) -> None:
     session = get_session()
     num_items = ctx.obj['NUM_ITEMS']
-    state = ItemState(state)
 
-    items = session.query(Item) \
-        .filter(Item.time > datetime.now()) \
-        .filter(Item.state == state) \
-        .order_by(Item.time) \
-        .limit(num_items)
-    render_items(items, 'Upcoming events', 'No upcoming events')
+    items = session.query(Item).filter(Item.time > datetime.now())
+    state = parse_choice(state)
+    if isinstance(state, ItemState):
+        items = items.filter(Item.state == state)
+        strs = (f'Upcoming {state.value}', f'No upcoming {state.value}')
+    elif isinstance(state, ItemSignifier):
+        items = items.filter(Item.signifier == state)
+        strs = (f'Upcoming {state.value}', f'No upcoming {state.value}')
+    else:
+        strs = ('Upcoming items', 'No upcoming items')
+    items = items.order_by(Item.time).limit(num_items)
+
+    render_items(items, *strs)
 
 
 @list_command.command(help='Show priority items')

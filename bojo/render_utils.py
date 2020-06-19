@@ -15,6 +15,7 @@ from bojo.db import (
 )
 
 NONE_STR = 'none'
+ALL_STR = 'all'
 
 ALL_CHOICES = [s for s in ItemStateDict.keys()] + \
               [s for s in ItemSignifierDict.keys()] + \
@@ -67,7 +68,7 @@ def parse_signifier(signifier: str) -> Optional[ItemSignifier]:
 
 
 def parse_choice(s: str) -> Optional[Union[ItemState, ItemSignifier]]:
-    if s == NONE_STR:
+    if s == NONE_STR or s == ALL_STR:
         return None
     if s in ItemStateDict:
         return ItemStateDict[s]
