@@ -205,8 +205,6 @@ class Item(Base):
             parent_id=item_dict.get('parent_id', None),
         )
 
-
-# Creates the SQLite database.
 engine_url = f'sqlite:///{get_bojo_root() / "db.sqlite"}'
 engine = sql.create_engine(engine_url)
 Base.metadata.create_all(engine)

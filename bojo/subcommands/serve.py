@@ -27,6 +27,10 @@ def serve_command(port: int) -> None:
     cur_folder = str(pathlib.Path(__file__).parent.absolute())
     app = Flask(__name__, template_folder=cur_folder)
 
+    @app.route('/favicon.ico')
+    def favicon() -> str:
+        return ''
+
     @app.route('/')
     @app.route('/<state>')
     def index(state: str = NONE_STR) -> str:
@@ -45,6 +49,7 @@ def serve_command(port: int) -> None:
             strs = ('All Items', 'No Items')
         title = strs[0] if items.count() else strs[1]
         links = [l for l in ALL_CHOICES if len(l) > 3]
+        session.close()
 
         return render_template('index.html', items=items, title=title, links=links)
 
