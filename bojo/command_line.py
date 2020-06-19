@@ -27,6 +27,7 @@ from bojo.render_utils import (
     NONE_STR,
 )
 from bojo.subcommands.list import list_command
+from bojo.subcommands.serve import serve_command
 
 if should_use_verbose():
     STATE_OPTS = ', '.join(
@@ -49,6 +50,7 @@ def cli():
 
 
 cli.add_command(list_command)
+cli.add_command(serve_command)
 
 
 @cli.command(help='Provides information about annotation')

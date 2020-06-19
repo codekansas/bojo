@@ -196,8 +196,8 @@ class Item(Base):
             description=item_dict['description'],
             state=ItemState(item_dict['state']),
             signifier=ItemSignifier(item_dict.get('signifier', None)),
-            time=cls.__from_time(item_dict['time']),
-            time_created=cls.__from_time(item_dict['time_created']),
+            time=cls.__from_time(item_dict.get('time', None)),
+            time_created=cls.__from_time(item_dict.get('time_created', None)),
             time_updated=cls.__from_time(item_dict.get('time_updated', None)),
             parent_id=item_dict.get('parent_id', None),
         )
