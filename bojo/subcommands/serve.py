@@ -33,7 +33,7 @@ def serve_command(port: int) -> None:
 
     @app.route('/')
     @app.route('/<state>')
-    def index(state: str = NONE_STR) -> str:
+    def index(state: str = ItemState.MIGRATED.value) -> str:
         session = get_session()
         items = session.query(Item).order_by(Item.id.desc())
         state = parse_choice(state)
